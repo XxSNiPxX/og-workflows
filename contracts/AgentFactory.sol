@@ -41,11 +41,9 @@ contract AgentFactory {
 
     AgentRegistry public immutable registry;
 
-    // We deploy these standard facet singletons once at factory-init time
-    // and reuse them across every agent. Domain facets *also* are reused —
-    // they are stateless contracts; per-diamond state lives in the diamond
-    // via diamond storage. This is the standard EIP-2535 pattern (different
-    // from CoreGameFactory which redeployed facets every call).
+    // Facet singletons. Deployed once and passed in at factory init time
+    // — keeps the factory's initcode well under the Shanghai limit (which
+    // includes the bytecode of every contract referenced via `new`).
     DiamondCutFacet public immutable diamondCutFacet;
     DiamondLoupeFacet public immutable diamondLoupeFacet;
     OwnershipFacet public immutable ownershipFacet;
@@ -87,7 +85,26 @@ contract AgentFactory {
     // Init
     // ---------------------------------------------------------------------
 
-    constructor(address _registry, address _userStateINFT, address _userStateLedger, address _protocolAdmin) {
+    /// @notice Bundle of facet singletons passed into the factory at deploy time.
+    ///         Keep these as a struct to avoid blowing the constructor's stack.
+    struct FacetSet {
+        DiamondCutFacet diamondCutFacet;
+        DiamondLoupeFacet diamondLoupeFacet;
+        OwnershipFacet ownershipFacet;
+        FacetRegistryFacet facetRegistryFacet;
+        AgentManifestFacet agentManifestFacet;
+        AgentPermissionFacet agentPermissionFacet;
+        AgentExecutionFacet agentExecutionFacet;
+        AgentAdminFacet agentAdminFacet;
+    }
+
+    constructor(
+        address _registry,
+        address _userStateINFT,
+        address _userStateLedger,
+        address _protocolAdmin,
+        FacetSet memory _facets
+    ) {
         if (_registry == address(0)) revert ZeroAddress();
         if (_protocolAdmin == address(0)) revert ZeroAddress();
         registry = AgentRegistry(_registry);
@@ -95,14 +112,14 @@ contract AgentFactory {
         userStateLedger = _userStateLedger;
         protocolAdmin = _protocolAdmin;
 
-        diamondCutFacet     = new DiamondCutFacet();
-        diamondLoupeFacet   = new DiamondLoupeFacet();
-        ownershipFacet      = new OwnershipFacet();
-        facetRegistryFacet  = new FacetRegistryFacet();
-        agentManifestFacet  = new AgentManifestFacet();
-        agentPermissionFacet = new AgentPermissionFacet();
-        agentExecutionFacet = new AgentExecutionFacet();
-        agentAdminFacet     = new AgentAdminFacet();
+        diamondCutFacet      = _facets.diamondCutFacet;
+        diamondLoupeFacet    = _facets.diamondLoupeFacet;
+        ownershipFacet       = _facets.ownershipFacet;
+        facetRegistryFacet   = _facets.facetRegistryFacet;
+        agentManifestFacet   = _facets.agentManifestFacet;
+        agentPermissionFacet = _facets.agentPermissionFacet;
+        agentExecutionFacet  = _facets.agentExecutionFacet;
+        agentAdminFacet      = _facets.agentAdminFacet;
 
         emit ProtocolAdminSet(_protocolAdmin);
         emit ProtocolAddressesUpdated(_userStateINFT, _userStateLedger);
@@ -327,13 +344,16 @@ contract AgentFactory {
     }
 
     function _agentPermissionSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](6);
+        s = new bytes4[](9);
         s[0] = AgentPermissionFacet.setWorker.selector;
         s[1] = AgentPermissionFacet.isWorker.selector;
         s[2] = AgentPermissionFacet.getWorkers.selector;
         s[3] = AgentPermissionFacet.setTrustedCaller.selector;
         s[4] = AgentPermissionFacet.isTrustedCaller.selector;
         s[5] = AgentPermissionFacet.getTrustedCallers.selector;
+        s[6] = AgentPermissionFacet.setWorkflowFactory.selector;
+        s[7] = AgentPermissionFacet.getWorkflowFactory.selector;
+        s[8] = AgentPermissionFacet.joinWorkflow.selector;
     }
 
     function _agentExecutionSelectors() internal pure returns (bytes4[] memory s) {

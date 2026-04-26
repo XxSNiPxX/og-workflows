@@ -3,6 +3,8 @@ pragma solidity ^0.8.20;
 
 import {LibDiamond} from "../libraries/LibDiamond.sol";
 import {LibAgentPermissionStorage} from "../libraries/LibAgentPermissionStorage.sol";
+import {LibAgentManifestStorage} from "../libraries/LibAgentManifestStorage.sol";
+import {IAgentPermission} from "../interfaces/IAgentPermission.sol";
 
 /// @title AgentPermissionFacet
 /// @notice Manages two access lists for an agent diamond:
@@ -10,13 +12,17 @@ import {LibAgentPermissionStorage} from "../libraries/LibAgentPermissionStorage.
 ///         - trustedCallers: contracts (e.g. WorkflowInstance) authorized to call request()
 ///
 ///         The agent admin (== diamond owner) is implicitly authorized for both.
-contract AgentPermissionFacet {
+contract AgentPermissionFacet is IAgentPermission {
     using LibAgentPermissionStorage for LibAgentPermissionStorage.Layout;
 
     event WorkerSet(address indexed worker, bool active);
     event TrustedCallerSet(address indexed caller, bool active);
+    event WorkflowFactorySet(address indexed factory);
+    event WorkflowJoined(address indexed workflow, address indexed factory);
 
     error ZeroAddress();
+    error NotWorkflowFactory();
+    error NotWorkflowReady();
 
     modifier onlyAdmin() {
         LibDiamond.enforceIsContractOwner();
@@ -92,12 +98,54 @@ contract AgentPermissionFacet {
         emit TrustedCallerSet(caller, active);
     }
 
-    function isTrustedCaller(address account) external view returns (bool) {
+    function isTrustedCaller(address account) external view override returns (bool) {
         if (account == LibDiamond.contractOwner()) return true;
         return LibAgentPermissionStorage.layout().trustedCallers[account];
     }
 
     function getTrustedCallers() external view returns (address[] memory) {
         return LibAgentPermissionStorage.layout().trustedCallerList;
+    }
+
+    // ---------------------------------------------------------------------
+    // Phase 2: Workflow factory integration
+    // ---------------------------------------------------------------------
+
+    /// @notice Admin sets the protocol-wide WorkflowFactory address. The factory
+    ///         is the only contract that can permissionlessly self-add workflows
+    ///         to the trustedCallers list (gated by `workflowReady`).
+    /// @dev    Setting to address(0) disables permissionless joining.
+    function setWorkflowFactory(address _factory) external onlyAdmin {
+        LibAgentPermissionStorage.layout().workflowFactory = _factory;
+        emit WorkflowFactorySet(_factory);
+    }
+
+    function getWorkflowFactory() external view override returns (address) {
+        return LibAgentPermissionStorage.layout().workflowFactory;
+    }
+
+    /// @notice Self-add a workflow to the trustedCallers list. Callable only
+    ///         by the registered WorkflowFactory; only succeeds when the agent's
+    ///         manifest has `workflowReady = true`.
+    /// @dev    This is the wiring that lets WorkflowFactory.createWorkflow
+    ///         atomically register the new workflow as a trusted caller across
+    ///         every agent in its pipeline, without each agent admin having to
+    ///         issue a manual transaction.
+    function joinWorkflow(address workflow) external override {
+        if (workflow == address(0)) revert ZeroAddress();
+        LibAgentPermissionStorage.Layout storage s = LibAgentPermissionStorage.layout();
+        if (msg.sender != s.workflowFactory) revert NotWorkflowFactory();
+
+        LibAgentManifestStorage.AgentManifest storage m = LibAgentManifestStorage.layout().manifest;
+        if (!m.workflowReady) revert NotWorkflowReady();
+
+        if (s.trustedCallers[workflow]) return; // idempotent
+
+        s.trustedCallers[workflow] = true;
+        s.trustedCallerList.push(workflow);
+        s.trustedCallerIndex[workflow] = s.trustedCallerList.length;
+
+        emit TrustedCallerSet(workflow, true);
+        emit WorkflowJoined(workflow, msg.sender);
     }
 }

@@ -16,6 +16,11 @@ library LibAgentPermissionStorage {
         mapping(address => bool) trustedCallers;
         address[] trustedCallerList;
         mapping(address => uint256) trustedCallerIndex;
+
+        // Phase 2: a single registered WorkflowFactory address that may
+        // permissionlessly self-add workflows to trustedCallers, gated by the
+        // agent's `workflowReady` manifest flag. Set by the agent admin.
+        address workflowFactory;
     }
 
     function layout() internal pure returns (Layout storage s) {

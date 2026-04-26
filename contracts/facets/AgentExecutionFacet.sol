@@ -7,6 +7,7 @@ import {LibAgentPermissionStorage} from "../libraries/LibAgentPermissionStorage.
 import {LibAgentExecutionStorage} from "../libraries/LibAgentExecutionStorage.sol";
 import {IUserStateINFT} from "../interfaces/IUserStateINFT.sol";
 import {IUserStateLedger} from "../interfaces/IUserStateLedger.sol";
+import {IWorkflowCallback} from "../interfaces/IWorkflowCallback.sol";
 
 /// @title AgentExecutionFacet
 /// @notice The request/ack/complete/fail state machine for an agent diamond.
@@ -219,10 +220,16 @@ contract AgentExecutionFacet {
 
         LibAgentExecutionStorage.Layout storage s = LibAgentExecutionStorage.layout();
 
-        // Verify the user has authorized this agent for this output type / workflow context.
+        // Verify the user has authorized this agent (or the orchestrating
+        // workflow) for this output type / workflow context.
+        // workflow == address(0)  → direct user request, auth target = this agent
+        // workflow != address(0)  → workflow request, auth target = the workflow
+        // The latter lets the user grant once at workflow scope rather than
+        // having to authorize every agent in the pipeline.
         if (s.userStateINFT == address(0)) revert INFTNotConfigured();
+        address authTarget = p.workflow == address(0) ? address(this) : p.workflow;
         uint256 wfId = p.workflow == address(0) ? 0 : uint256(uint160(p.workflow));
-        if (!IUserStateINFT(s.userStateINFT).isAuthorizedFor(p.tokenId, address(this), m.outputType, wfId)) {
+        if (!IUserStateINFT(s.userStateINFT).isAuthorizedFor(p.tokenId, authTarget, m.outputType, wfId)) {
             revert UserNotAuthorized();
         }
 
@@ -309,6 +316,8 @@ contract AgentExecutionFacet {
         // Append to user's ledger. Ledger re-checks authorization; if revoked
         // mid-flight the ledger will revert and the whole complete() reverts,
         // leaving the request in PROCESSING / CREATED for retry or admin cancel.
+        // The workflow address (or 0 for direct) is what the ledger uses as
+        // its auth target — see UserStateLedger.appendItem.
         IUserStateLedger.StateItem memory item = IUserStateLedger.StateItem({
             itemType: outputType,
             pointer: outputPointer,
@@ -318,9 +327,24 @@ contract AgentExecutionFacet {
             stepIndex: r.stepIndex,
             visibility: visibility
         });
-        ledgerItemId = IUserStateLedger(s.userStateLedger).appendItem(r.tokenId, item);
+        ledgerItemId = IUserStateLedger(s.userStateLedger).appendItem(r.tokenId, r.workflow, item);
 
         emit StepCompleted(requestKey, r.runId, r.stepIndex, outputPointer, outputType, outputHash, ledgerItemId);
+
+        // Notify the workflow if this request was workflow-orchestrated.
+        // Wrapped in try/catch so a buggy workflow can't lock the worker out
+        // of getting their step recorded — the workflow can recover via poke().
+        if (r.workflow != address(0)) {
+            try IWorkflowCallback(r.workflow).onStepCompleted(
+                r.runId,
+                r.stepIndex,
+                outputPointer,
+                outputType,
+                outputHash
+            ) {} catch {
+                // intentionally swallow — workflow can be poked manually
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -339,6 +363,11 @@ contract AgentExecutionFacet {
         r.status = LibAgentExecutionStorage.RequestStatus.FAILED;
         r.updatedAt = uint64(block.timestamp);
         emit StepFailed(requestKey, r.runId, r.stepIndex, reasonHash);
+
+        if (r.workflow != address(0)) {
+            try IWorkflowCallback(r.workflow).onStepFailed(r.runId, r.stepIndex, reasonHash) {}
+            catch {}
+        }
     }
 
     /// @notice Cancellable by either the trusted caller (workflow) that opened
@@ -361,6 +390,15 @@ contract AgentExecutionFacet {
         r.status = LibAgentExecutionStorage.RequestStatus.CANCELLED;
         r.updatedAt = uint64(block.timestamp);
         emit StepCancelled(requestKey, r.runId, r.stepIndex);
+
+        // If a workflow opened the request and someone else (admin/user)
+        // cancelled it, notify the workflow. If the workflow itself called
+        // cancel() this is a no-op-ish callback — the workflow can ignore
+        // its own re-entry, or use it to update state in a single tx.
+        if (r.workflow != address(0)) {
+            try IWorkflowCallback(r.workflow).onStepCancelled(r.runId, r.stepIndex) {}
+            catch {}
+        }
     }
 
     // ---------------------------------------------------------------------

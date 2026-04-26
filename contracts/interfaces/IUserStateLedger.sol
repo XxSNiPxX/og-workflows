@@ -23,7 +23,9 @@ interface IUserStateLedger {
     /// @notice Append a new state item to the user's ledger.
     /// @dev    Caller must be authorized in UserStateINFT for this tokenId
     ///         with a permission scope covering `item.itemType`.
-    function appendItem(uint256 tokenId, StateItem calldata item)
-        external
-        returns (uint256 itemId);
+    function appendItem(
+        uint256 tokenId,
+        address workflow,
+        StateItem calldata item
+    ) external returns (uint256);
 }

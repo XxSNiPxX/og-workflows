@@ -1,0 +1,467 @@
+===== AgentAdminFacet =====
+event: AdminTransferred
+function: admin
+function: setAdmin
+function: syncToRegistry
+
+===== AgentDiamond =====
+event: DiamondCutName
+event: FacetNameUpdated
+event: FacetRegistered
+event: FacetUnregistered
+event: OwnershipTransferred
+function: deployFacet
+function: getSelectors
+function: owner
+function: supportsInterface
+function: transferOwnership
+
+===== AgentExecutionFacet =====
+event: ExecutionConfigUpdated
+event: StepAcknowledged
+event: StepCancelled
+event: StepCompleted
+event: StepFailed
+event: StepRequested
+function: acknowledge
+function: cancel
+function: complete
+function: fail
+function: getAllRequestKeys
+function: getExecutionConfig
+function: getRequest
+function: getRequestKeysForUser
+function: request
+function: setExecutionConfig
+function: totalRequests
+function: userRequest
+
+===== AgentFactory =====
+event: AgentCreated
+event: ProtocolAddressesUpdated
+event: ProtocolAdminSet
+function: agentAdminFacet
+function: agentExecutionFacet
+function: agentManifestFacet
+function: agentPermissionFacet
+function: allAgents
+function: createAgent
+function: developerToAgents
+function: diamondCutFacet
+function: diamondLoupeFacet
+function: estimateAgentDeployCost
+function: facetRegistryFacet
+function: getAgentsByDeveloper
+function: getAllAgents
+function: ownershipFacet
+function: protocolAdmin
+function: registry
+function: setProtocolAddresses
+function: setProtocolAdmin
+function: totalAgents
+function: userStateINFT
+function: userStateLedger
+
+===== AgentManifestFacet =====
+event: ManifestInitialized
+event: ManifestMetaUpdated
+event: PausedUpdated
+event: PayoutAddressUpdated
+event: PriceUpdated
+event: WorkflowReadyUpdated
+function: getInputTypes
+function: getManifest
+function: getOutputType
+function: initManifest
+function: isPaused
+function: isWorkflowReady
+function: quote
+function: setPaused
+function: setPayoutAddress
+function: setPrice
+function: setWorkflowReady
+function: supportsInput
+function: updateMeta
+
+===== AgentPermissionFacet =====
+event: TrustedCallerSet
+event: WorkerSet
+event: WorkflowFactorySet
+event: WorkflowJoined
+function: getTrustedCallers
+function: getWorkers
+function: getWorkflowFactory
+function: isTrustedCaller
+function: isWorker
+function: joinWorkflow
+function: setTrustedCaller
+function: setWorker
+function: setWorkflowFactory
+
+===== AgentRegistry =====
+event: AdminSet
+event: AgentActiveSet
+event: AgentMetaSynced
+event: AgentRegistered
+event: FactorySet
+event: RegistryPaused
+function: admin
+function: agentIdByAddress
+function: factory
+function: getAgent
+function: getAgentByAddress
+function: listActiveAgents
+function: listAgentsByCreator
+function: listAllAgents
+function: nextAgentId
+function: registerAgent
+function: registryPaused
+function: setAdmin
+function: setAgentActive
+function: setFactory
+function: setPaused
+function: syncAgent
+function: totalAgents
+
+===== contracts_interfaces_IUserStateINFT_sol_IUserStateINFT =====
+function: isAuthorizedFor
+function: ownerOf
+function: tokenIdOf
+
+===== contracts_interfaces_IUserStateLedger_sol_IUserStateLedger =====
+function: appendItem
+
+===== contracts_IUserStateINFT_sol_IUserStateINFT =====
+function: isAuthorizedFor
+function: ownerOf
+function: tokenIdOf
+
+===== contracts_IUserStateLedger_sol_IUserStateLedger =====
+function: appendItem
+
+===== DiamondCutFacet =====
+event: DiamondCut
+function: diamondCut
+function: diamondCutWithName
+
+===== DiamondLoupeFacet =====
+function: facetAddress
+function: facetAddresses
+function: facetFunctionSelectors
+function: facets
+function: supportsInterface
+
+===== FacetRegistryFacet =====
+event: FacetRegistered
+event: FacetRemoved
+function: getAllFacets
+function: getFacetAddress
+function: getFacetName
+
+===== IAgentExecution =====
+function: cancel
+function: getRequest
+function: request
+
+===== IAgentManifest =====
+function: getOutputType
+function: isPaused
+function: isWorkflowReady
+function: quote
+function: supportsInput
+
+===== IAgentPermission =====
+function: getWorkflowFactory
+function: isTrustedCaller
+function: joinWorkflow
+
+===== IAgentRegistry =====
+event: AgentActiveSet
+event: AgentMetaSynced
+event: AgentRegistered
+function: registerAgent
+function: syncAgent
+
+===== IDiamond =====
+
+===== IDiamondCut =====
+function: diamondCut
+
+===== IDiamondLoupe =====
+function: facetAddress
+function: facetAddresses
+function: facetFunctionSelectors
+function: facets
+
+===== IERC165 =====
+function: supportsInterface
+
+===== IERC173 =====
+event: OwnershipTransferred
+function: owner
+function: transferOwnership
+
+===== IERC7857 =====
+event: Cloned
+event: Minted
+event: Published
+event: SecureTransferred
+event: UsageAuthorized
+event: UsageRevoked
+function: authorizeUsage
+function: cloneToken
+function: dataHashOf
+function: encryptedURIOf
+function: getPermissions
+function: isAuthorized
+function: mint
+function: ownerOf
+function: publish
+function: revokeUsage
+function: secureTransfer
+
+===== IERC7857Oracle =====
+function: verifyCloneProof
+function: verifyTransferProof
+
+===== IProtocolTreasury =====
+event: Deposited
+event: Refunded
+event: Released
+event: Settled
+event: WorkflowRegistered
+function: balanceOf
+function: deposit
+function: getEscrow
+function: isRegistered
+function: refundTo
+function: registerWorkflow
+function: releaseTo
+function: settle
+
+===== IUserStateINFT =====
+function: isAuthorizedFor
+function: ownerOf
+function: tokenIdOf
+
+===== IUserStateLedger =====
+function: appendItem
+
+===== IWorkflowCallback =====
+function: onStepCancelled
+function: onStepCompleted
+function: onStepFailed
+
+===== IWorkflowInstance =====
+event: RunCancelled
+event: RunCompleted
+event: RunFailed
+event: RunStarted
+event: StepRequested
+event: StepResolved
+function: cancelRun
+function: getRequestKey
+function: getRun
+function: getStep
+function: onStepCancelled
+function: onStepCompleted
+function: onStepFailed
+function: poke
+function: start
+function: stepCount
+function: totalCost
+
+===== IWorkflowRegistry =====
+event: WorkflowActiveSet
+event: WorkflowRegistered
+function: registerWorkflow
+
+===== LibAgentExecutionStorage =====
+
+===== LibAgentManifestStorage =====
+
+===== LibAgentPermissionStorage =====
+
+===== LibDiamond =====
+event: DiamondCut
+event: DiamondCutName
+event: OwnershipTransferred
+
+===== LibFacetRegistry =====
+event: FacetNameUpdated
+event: FacetOwnerUpdated
+event: FacetRegistered
+event: FacetUnregistered
+
+===== LibFacetRegistryStorage =====
+
+===== LibPermissionScope =====
+
+===== MockERC7857Oracle =====
+event: AcceptAllSet
+event: AdminSet
+function: acceptAll
+function: admin
+function: setAcceptAll
+function: setAdmin
+function: verifyCloneProof
+function: verifyTransferProof
+
+===== OwnershipFacet =====
+event: FacetOwnerUpdated
+event: OwnershipTransferred
+function: owner
+function: transferOwnership
+
+===== ProtocolTreasury =====
+event: AdminSet
+event: Deposited
+event: FactorySet
+event: FeeBpsSet
+event: FeeRecipientSet
+event: Refunded
+event: Released
+event: Settled
+event: WorkflowRegistered
+function: admin
+function: balanceOf
+function: deposit
+function: factory
+function: feeBps
+function: feeRecipient
+function: getEscrow
+function: isRegistered
+function: refundTo
+function: registerWorkflow
+function: releaseTo
+function: setAdmin
+function: setFactory
+function: setFeeBps
+function: setFeeRecipient
+function: settle
+function: totalFeesCollected
+
+===== UserStateINFT =====
+event: AdminSet
+event: Cloned
+event: Minted
+event: MintingPaused
+event: OracleSet
+event: ProfileUpdated
+event: Published
+event: SecureTransferred
+event: UsageAuthorized
+event: UsageRevoked
+function: admin
+function: authorizeUsage
+function: cloneToken
+function: dataHashOf
+function: disclosedKeyOf
+function: encryptedURIOf
+function: getAuthorizedExecutors
+function: getPermissions
+function: getProfile
+function: isAuthorized
+function: isAuthorizedFor
+function: mint
+function: mintingPaused
+function: oracle
+function: ownerOf
+function: publish
+function: revokeUsage
+function: secureTransfer
+function: setAdmin
+function: setMintingPaused
+function: setOracle
+function: setProfileActive
+function: supportsInterface
+function: tokenIdOf
+function: totalSupply
+
+===== UserStateLedger =====
+event: ItemAppended
+event: ItemArchived
+event: ItemPointerUpdated
+event: ItemVisibilityUpdated
+function: appendItem
+function: archiveItem
+function: getAllItems
+function: getItem
+function: getItemsByRun
+function: getItemsByType
+function: getLatestItemByType
+function: inft
+function: setItemVisibility
+function: totalItems
+function: updateItemPointer
+
+===== WorkflowFactory =====
+event: ProtocolAdminSet
+event: WorkflowCreated
+function: allWorkflows
+function: createWorkflow
+function: creatorToWorkflows
+function: getAllWorkflows
+function: getWorkflowsByCreator
+function: protocolAdmin
+function: quoteWorkflow
+function: registry
+function: setProtocolAdmin
+function: totalWorkflows
+function: treasury
+function: userStateINFT
+
+===== WorkflowInstance =====
+event: RunCancelled
+event: RunCompleted
+event: RunFailed
+event: RunStarted
+event: StepRequested
+event: StepResolved
+function: _requestStepExternal
+function: admin
+function: cancelRun
+function: creator
+function: description
+function: factory
+function: getAllSteps
+function: getRequestKey
+function: getRun
+function: getStep
+function: inft
+function: inputType
+function: name
+function: nextRunId
+function: onStepCancelled
+function: onStepCompleted
+function: onStepFailed
+function: outputType
+function: poke
+function: start
+function: stepCount
+function: totalCost
+function: treasury
+
+===== WorkflowRegistry =====
+event: AdminSet
+event: FactorySet
+event: RegistryPaused
+event: WorkflowActiveSet
+event: WorkflowRegistered
+function: admin
+function: factory
+function: getWorkflow
+function: getWorkflowByAddress
+function: listActiveWorkflows
+function: listAllWorkflows
+function: listWorkflowsByCreator
+function: nextWorkflowId
+function: registerWorkflow
+function: registryPaused
+function: setAdmin
+function: setFactory
+function: setPaused
+function: setWorkflowActive
+function: totalWorkflows
+function: workflowIdByAddress
+

@@ -1,0 +1,363 @@
+===== AgentAdminFacet =====
+admin
+setAdmin
+syncToRegistry
+
+===== AgentDiamond =====
+deployFacet
+getSelectors
+owner
+supportsInterface
+transferOwnership
+
+===== AgentExecutionFacet =====
+acknowledge
+cancel
+complete
+fail
+getAllRequestKeys
+getExecutionConfig
+getRequest
+getRequestKeysForUser
+request
+setExecutionConfig
+totalRequests
+userRequest
+
+===== AgentFactory =====
+agentAdminFacet
+agentExecutionFacet
+agentManifestFacet
+agentPermissionFacet
+allAgents
+createAgent
+developerToAgents
+diamondCutFacet
+diamondLoupeFacet
+estimateAgentDeployCost
+facetRegistryFacet
+getAgentsByDeveloper
+getAllAgents
+ownershipFacet
+protocolAdmin
+registry
+setProtocolAddresses
+setProtocolAdmin
+totalAgents
+userStateINFT
+userStateLedger
+
+===== AgentManifestFacet =====
+getInputTypes
+getManifest
+getOutputType
+initManifest
+isPaused
+isWorkflowReady
+quote
+setPaused
+setPayoutAddress
+setPrice
+setWorkflowReady
+supportsInput
+updateMeta
+
+===== AgentPermissionFacet =====
+getTrustedCallers
+getWorkers
+getWorkflowFactory
+isTrustedCaller
+isWorker
+joinWorkflow
+setTrustedCaller
+setWorker
+setWorkflowFactory
+
+===== AgentRegistry =====
+admin
+agentIdByAddress
+factory
+getAgent
+getAgentByAddress
+listActiveAgents
+listAgentsByCreator
+listAllAgents
+nextAgentId
+registerAgent
+registryPaused
+setAdmin
+setAgentActive
+setFactory
+setPaused
+syncAgent
+totalAgents
+
+===== contracts_interfaces_IUserStateINFT_sol_IUserStateINFT =====
+isAuthorizedFor
+ownerOf
+tokenIdOf
+
+===== contracts_interfaces_IUserStateLedger_sol_IUserStateLedger =====
+appendItem
+
+===== contracts_IUserStateINFT_sol_IUserStateINFT =====
+isAuthorizedFor
+ownerOf
+tokenIdOf
+
+===== contracts_IUserStateLedger_sol_IUserStateLedger =====
+appendItem
+
+===== DiamondCutFacet =====
+diamondCut
+diamondCutWithName
+
+===== DiamondLoupeFacet =====
+facetAddress
+facetAddresses
+facetFunctionSelectors
+facets
+supportsInterface
+
+===== FacetRegistryFacet =====
+getAllFacets
+getFacetAddress
+getFacetName
+
+===== IAgentExecution =====
+cancel
+getRequest
+request
+
+===== IAgentManifest =====
+getOutputType
+isPaused
+isWorkflowReady
+quote
+supportsInput
+
+===== IAgentPermission =====
+getWorkflowFactory
+isTrustedCaller
+joinWorkflow
+
+===== IAgentRegistry =====
+registerAgent
+syncAgent
+
+===== IDiamond =====
+
+===== IDiamondCut =====
+diamondCut
+
+===== IDiamondLoupe =====
+facetAddress
+facetAddresses
+facetFunctionSelectors
+facets
+
+===== IERC165 =====
+supportsInterface
+
+===== IERC173 =====
+owner
+transferOwnership
+
+===== IERC7857 =====
+authorizeUsage
+cloneToken
+dataHashOf
+encryptedURIOf
+getPermissions
+isAuthorized
+mint
+ownerOf
+publish
+revokeUsage
+secureTransfer
+
+===== IERC7857Oracle =====
+verifyCloneProof
+verifyTransferProof
+
+===== IProtocolTreasury =====
+balanceOf
+deposit
+getEscrow
+isRegistered
+refundTo
+registerWorkflow
+releaseTo
+settle
+
+===== IUserStateINFT =====
+isAuthorizedFor
+ownerOf
+tokenIdOf
+
+===== IUserStateLedger =====
+appendItem
+
+===== IWorkflowCallback =====
+onStepCancelled
+onStepCompleted
+onStepFailed
+
+===== IWorkflowInstance =====
+cancelRun
+getRequestKey
+getRun
+getStep
+onStepCancelled
+onStepCompleted
+onStepFailed
+poke
+start
+stepCount
+totalCost
+
+===== IWorkflowRegistry =====
+registerWorkflow
+
+===== LibAgentExecutionStorage =====
+
+===== LibAgentManifestStorage =====
+
+===== LibAgentPermissionStorage =====
+
+===== LibDiamond =====
+
+===== LibFacetRegistry =====
+
+===== LibFacetRegistryStorage =====
+
+===== LibPermissionScope =====
+
+===== MockERC7857Oracle =====
+acceptAll
+admin
+setAcceptAll
+setAdmin
+verifyCloneProof
+verifyTransferProof
+
+===== OwnershipFacet =====
+owner
+transferOwnership
+
+===== ProtocolTreasury =====
+admin
+balanceOf
+deposit
+factory
+feeBps
+feeRecipient
+getEscrow
+isRegistered
+refundTo
+registerWorkflow
+releaseTo
+setAdmin
+setFactory
+setFeeBps
+setFeeRecipient
+settle
+totalFeesCollected
+
+===== UserStateINFT =====
+admin
+authorizeUsage
+cloneToken
+dataHashOf
+disclosedKeyOf
+encryptedURIOf
+getAuthorizedExecutors
+getPermissions
+getProfile
+isAuthorized
+isAuthorizedFor
+mint
+mintingPaused
+oracle
+ownerOf
+publish
+revokeUsage
+secureTransfer
+setAdmin
+setMintingPaused
+setOracle
+setProfileActive
+supportsInterface
+tokenIdOf
+totalSupply
+
+===== UserStateLedger =====
+appendItem
+archiveItem
+getAllItems
+getItem
+getItemsByRun
+getItemsByType
+getLatestItemByType
+inft
+setItemVisibility
+totalItems
+updateItemPointer
+
+===== WorkflowFactory =====
+allWorkflows
+createWorkflow
+creatorToWorkflows
+getAllWorkflows
+getWorkflowsByCreator
+protocolAdmin
+quoteWorkflow
+registry
+setProtocolAdmin
+totalWorkflows
+treasury
+userStateINFT
+
+===== WorkflowInstance =====
+_requestStepExternal
+admin
+cancelRun
+creator
+description
+factory
+getAllSteps
+getRequestKey
+getRun
+getStep
+inft
+inputType
+name
+nextRunId
+onStepCancelled
+onStepCompleted
+onStepFailed
+outputType
+poke
+start
+stepCount
+totalCost
+treasury
+
+===== WorkflowRegistry =====
+admin
+factory
+getWorkflow
+getWorkflowByAddress
+listActiveWorkflows
+listAllWorkflows
+listWorkflowsByCreator
+nextWorkflowId
+registerWorkflow
+registryPaused
+setAdmin
+setFactory
+setPaused
+setWorkflowActive
+totalWorkflows
+workflowIdByAddress
+
