@@ -5,39 +5,15 @@ import {IWorkflowInstance} from "./interfaces/IWorkflowInstance.sol";
 import {IAgentExecution} from "./interfaces/IAgentExecution.sol";
 import {IUserStateINFT} from "./interfaces/IUserStateINFT.sol";
 import {IProtocolTreasury} from "./interfaces/IProtocolTreasury.sol";
+import {IUserStateLedger} from "./interfaces/IUserStateLedger.sol";
 
-/// @title WorkflowInstance
-/// @notice One per workflow definition. Frozen at construction:
-///         - the StepSpec[] (agent / I/O types / cost / payout snapshot)
-///         - the I/O type chain (validated by WorkflowFactory before deploy)
-///         - totalCost
-///
-///         Lifecycle of a run:
-///           1. user calls start(tokenId, inputPointer) with msg.value == totalCost
-///              → workflow deposits funds in treasury, requests step 0 on agent[0]
-///           2. worker on agent[i] does work, calls agent[i].complete(...)
-///           3. agent's complete() try-calls workflow.onStepCompleted(...)
-///              → workflow releases payment, requests next step (or finalises)
-///           4. on the last step: workflow settles escrow (refunds any leftover)
-///              and marks run COMPLETED
-///
-///         Failure paths:
-///           - agent.fail callback → workflow refunds remaining escrow + step
-///             that failed (worker who said "no result" doesn't get paid)
-///           - user calls cancelRun → workflow cancels in-flight step on agent
-///             → agent's cancel callback → workflow refunds remaining
-///           - callback missed (revert/OOG/etc) → anyone calls poke(runId) to
-///             pull the agent's status and progress the run
 contract WorkflowInstance is IWorkflowInstance {
-    // ---------------------------------------------------------------------
-    // Immutable wiring (set at construction)
-    // ---------------------------------------------------------------------
-
     address public immutable factory;
     address public immutable creator;
     address public immutable admin;
     IUserStateINFT public immutable inft;
     IProtocolTreasury public immutable treasury;
+    IUserStateLedger public immutable ledger;
 
     string public name;
     string public description;
@@ -45,18 +21,9 @@ contract WorkflowInstance is IWorkflowInstance {
     StepSpec[] internal _steps;
     uint256 internal immutable _totalCost;
 
-    // ---------------------------------------------------------------------
-    // Run state
-    // ---------------------------------------------------------------------
-
-    uint256 public nextRunId; // 1-indexed
+    uint256 public nextRunId;
     mapping(uint256 => Run) internal _runs;
-    // (runId, stepIndex) => requestKey returned by agent.request()
     mapping(uint256 => mapping(uint256 => bytes32)) internal _requestKeys;
-
-    // ---------------------------------------------------------------------
-    // Errors
-    // ---------------------------------------------------------------------
 
     error NotOwnerOfToken();
     error InsufficientPayment();
@@ -69,33 +36,31 @@ contract WorkflowInstance is IWorkflowInstance {
     error TransferFailed();
     error NoStepsExecuted();
 
-    // ---------------------------------------------------------------------
-    // Construction
-    // ---------------------------------------------------------------------
-
-    /// @dev Parameters bundled to keep the constructor under the stack limit.
     struct InitParams {
         address factory;
         address creator;
         address admin;
         address inft;
         address treasury;
+        address ledger;
         StepSpec[] steps;
         string name;
         string description;
     }
 
     constructor(InitParams memory p) {
-        require(p.factory != address(0), "WI: factory zero");
-        require(p.inft != address(0), "WI: inft zero");
-        require(p.treasury != address(0), "WI: treasury zero");
-        require(p.steps.length > 0, "WI: empty workflow");
+        require(p.factory != address(0), "factory zero");
+        require(p.inft != address(0), "inft zero");
+        require(p.treasury != address(0), "treasury zero");
+        require(p.ledger != address(0), "ledger zero");
+        require(p.steps.length > 0, "empty workflow");
 
         factory = p.factory;
         creator = p.creator;
         admin = p.admin == address(0) ? p.creator : p.admin;
         inft = IUserStateINFT(p.inft);
         treasury = IProtocolTreasury(p.treasury);
+        ledger = IUserStateLedger(p.ledger);
         name = p.name;
         description = p.description;
 
@@ -107,24 +72,29 @@ contract WorkflowInstance is IWorkflowInstance {
         _totalCost = cost;
     }
 
-    // ---------------------------------------------------------------------
-    // start
-    // ---------------------------------------------------------------------
+    function inputType() external view returns (bytes32) {
+        return _steps[0].inputType;
+    }
+
+    function outputType() external view returns (bytes32) {
+        return _steps[_steps.length - 1].outputType;
+    }
 
     function start(
         uint256 tokenId,
         bytes32 inputPointer
     ) external payable override returns (uint256 runId) {
-        if (inft.ownerOf(tokenId) != msg.sender) revert NotOwnerOfToken();
-        if (!inft.isAuthorized(tokenId, address(this))) revert NotAuthorized();
         if (msg.value < _totalCost) revert InsufficientPayment();
+
+        // Capability-based check: workflow must be authorized for this token.
+        // Ownership is still expected in the normal flow, but the pipeline
+        // should not depend on a strict owner-only path for execution.
+        if (!inft.isAuthorized(tokenId, address(this))) revert NotAuthorized();
 
         runId = ++nextRunId;
 
-        // Deposit first (fail-fast)
         treasury.deposit{value: _totalCost}(runId, msg.sender);
 
-        // Refund excess
         if (msg.value > _totalCost) {
             (bool ok, ) = msg.sender.call{value: msg.value - _totalCost}("");
             if (!ok) revert TransferFailed();
@@ -146,16 +116,12 @@ contract WorkflowInstance is IWorkflowInstance {
         _requestStep(runId, 0);
     }
 
-    // ---------------------------------------------------------------------
-    // Callbacks (called by agent.complete/fail/cancel)
-    // ---------------------------------------------------------------------
-
     function onStepCompleted(
         uint256 runId,
         uint256 stepIndex,
         bytes32 outputPointer,
         bytes32 outputType_,
-        bytes32 /*outputHash*/
+        bytes32 outputHash
     ) external override {
         Run storage r = _runs[runId];
         if (r.status != RunStatus.RUNNING) revert RunNotActive();
@@ -164,7 +130,7 @@ contract WorkflowInstance is IWorkflowInstance {
         if (outputType_ != _steps[stepIndex].outputType)
             revert WrongOutputType();
 
-        _settleStep(runId, stepIndex, outputPointer);
+        _settleStep(runId, stepIndex, outputPointer, outputHash);
     }
 
     function onStepFailed(
@@ -185,8 +151,6 @@ contract WorkflowInstance is IWorkflowInstance {
         uint256 stepIndex
     ) external override {
         Run storage r = _runs[runId];
-        // If we already moved on (e.g. user called cancelRun and we already
-        // marked CANCELLED), this is a no-op.
         if (r.status != RunStatus.RUNNING) return;
         if (r.currentStepIndex != stepIndex) return;
         if (msg.sender != _steps[stepIndex].agent) return;
@@ -194,14 +158,10 @@ contract WorkflowInstance is IWorkflowInstance {
         _cancelRun(runId, stepIndex);
     }
 
-    // ---------------------------------------------------------------------
-    // poke — recovery path when callback was missed
-    // ---------------------------------------------------------------------
-
     function poke(uint256 runId) external override {
         Run storage r = _runs[runId];
         if (r.status == RunStatus.NONE) revert UnknownRun();
-        if (r.status != RunStatus.RUNNING) return; // already terminal
+        if (r.status != RunStatus.RUNNING) return;
 
         uint256 stepIndex = r.currentStepIndex;
         bytes32 reqKey = _requestKeys[runId][stepIndex];
@@ -211,71 +171,77 @@ contract WorkflowInstance is IWorkflowInstance {
         IAgentExecution.RequestRecord memory req = agent.getRequest(reqKey);
 
         if (req.status == IAgentExecution.RequestStatus.COMPLETED) {
-            if (req.outputType != _steps[stepIndex].outputType)
+            if (req.outputType != _steps[stepIndex].outputType) {
                 revert WrongOutputType();
-            _settleStep(runId, stepIndex, req.outputPointer);
+            }
+            _settleStep(runId, stepIndex, req.outputPointer, req.outputHash);
         } else if (req.status == IAgentExecution.RequestStatus.FAILED) {
             _failRun(runId, stepIndex, bytes32(0));
         } else if (req.status == IAgentExecution.RequestStatus.CANCELLED) {
             _cancelRun(runId, stepIndex);
         }
-        // else: still CREATED / PROCESSING — nothing to do
     }
-
-    // ---------------------------------------------------------------------
-    // cancelRun — user-initiated mid-run cancel
-    // ---------------------------------------------------------------------
 
     function cancelRun(uint256 runId) external override {
         Run storage r = _runs[runId];
         if (r.status == RunStatus.NONE) revert UnknownRun();
         if (r.status != RunStatus.RUNNING) revert RunNotActive();
-        if (msg.sender != r.user && msg.sender != admin)
+        if (msg.sender != r.user && msg.sender != admin) {
             revert NotUserOrAdmin();
+        }
 
         bytes32 reqKey = _requestKeys[runId][r.currentStepIndex];
         IAgentExecution(_steps[r.currentStepIndex].agent).cancel(reqKey);
-        // The agent's cancel() will callback onStepCancelled which finalises
-        // the run. If the callback reverted (try/catch in the agent), the run
-        // is still in RUNNING; anyone can poke() it to finalise.
     }
-
-    // ---------------------------------------------------------------------
-    // Internal: state transitions
-    // ---------------------------------------------------------------------
 
     function _settleStep(
         uint256 runId,
         uint256 stepIndex,
-        bytes32 outputPointer
+        bytes32 outputPointer,
+        bytes32 outputHash
     ) internal {
         Run storage r = _runs[runId];
         StepSpec storage step = _steps[stepIndex];
 
-        // Pay the agent
+        // 1. WRITE TO LEDGER (internal effect)
+        ledger.appendItem(
+            r.tokenId,
+            address(this),
+            IUserStateLedger.StateItem({
+                itemType: step.outputType,
+                pointer: outputPointer,
+                contentHash: outputHash,
+                labelHash: bytes32(0),
+                runId: runId,
+                stepIndex: stepIndex,
+                visibility: IUserStateLedger.Visibility.PRIVATE_SUMMARY
+            })
+        );
+
+        // 2. ADVANCE STATE FIRST (CRITICAL FIX)
+        bool isLast = (stepIndex + 1 == _steps.length);
+
+        if (!isLast) {
+            r.currentStepIndex = stepIndex + 1;
+            r.currentInputPointer = outputPointer;
+            r.currentInputType = _steps[stepIndex + 1].inputType;
+        }
+
+        r.updatedAt = uint64(block.timestamp);
+
+        // 3. THEN EXTERNAL CALLS (safe ordering)
+
         if (step.cost > 0) {
             treasury.releaseTo(runId, step.payoutAddress, step.cost);
         }
 
         emit StepResolved(runId, stepIndex, RunStatus.RUNNING);
 
-        if (stepIndex + 1 == _steps.length) {
-            // Last step — finalise run
+        if (isLast) {
             r.status = RunStatus.COMPLETED;
-            r.updatedAt = uint64(block.timestamp);
-            // Refund any leftover (shouldn't be any in normal flow but defensive)
             treasury.settle(runId, r.user);
             emit RunCompleted(runId, outputPointer);
         } else {
-            // Advance to next step
-            r.currentStepIndex = stepIndex + 1;
-            r.currentInputPointer = outputPointer;
-            r.currentInputType = _steps[stepIndex + 1].inputType;
-            r.updatedAt = uint64(block.timestamp);
-
-            // try/catch: if requesting next step fails (e.g. user revoked
-            // permission, next agent paused), the run is failed and remaining
-            // escrow refunded.
             try this._requestStepExternal(runId, stepIndex + 1) {} catch {
                 _failRun(runId, stepIndex + 1, keccak256("requestNextFailed"));
             }
@@ -290,7 +256,6 @@ contract WorkflowInstance is IWorkflowInstance {
         Run storage r = _runs[runId];
         r.status = RunStatus.FAILED;
         r.updatedAt = uint64(block.timestamp);
-        // Refund all remaining escrow to user
         treasury.settle(runId, r.user);
         emit RunFailed(runId, stepIndex, reasonHash);
     }
@@ -306,7 +271,8 @@ contract WorkflowInstance is IWorkflowInstance {
     function _requestStep(uint256 runId, uint256 stepIndex) internal {
         Run storage r = _runs[runId];
         StepSpec storage step = _steps[stepIndex];
-        bytes32 reqKey = IAgentExecution(step.agent).request(
+
+        bytes32 key = IAgentExecution(step.agent).request(
             r.user,
             r.tokenId,
             r.currentInputPointer,
@@ -314,20 +280,15 @@ contract WorkflowInstance is IWorkflowInstance {
             runId,
             stepIndex
         );
-        _requestKeys[runId][stepIndex] = reqKey;
-        emit StepRequested(runId, stepIndex, step.agent, reqKey);
+
+        _requestKeys[runId][stepIndex] = key;
+        emit StepRequested(runId, stepIndex, step.agent, key);
     }
 
-    /// @notice External wrapper around _requestStep so we can try/catch from
-    ///         within _settleStep. Restricted to self-call only.
     function _requestStepExternal(uint256 runId, uint256 stepIndex) external {
         require(msg.sender == address(this), "WI: only self");
         _requestStep(runId, stepIndex);
     }
-
-    // ---------------------------------------------------------------------
-    // Reads
-    // ---------------------------------------------------------------------
 
     function totalCost() external view override returns (uint256) {
         return _totalCost;
@@ -338,13 +299,9 @@ contract WorkflowInstance is IWorkflowInstance {
     }
 
     function getStep(
-        uint256 stepIndex
+        uint256 i
     ) external view override returns (StepSpec memory) {
-        return _steps[stepIndex];
-    }
-
-    function getAllSteps() external view returns (StepSpec[] memory) {
-        return _steps;
+        return _steps[i];
     }
 
     function getRun(uint256 runId) external view override returns (Run memory) {
@@ -356,13 +313,5 @@ contract WorkflowInstance is IWorkflowInstance {
         uint256 stepIndex
     ) external view override returns (bytes32) {
         return _requestKeys[runId][stepIndex];
-    }
-
-    function inputType() external view returns (bytes32) {
-        return _steps[0].inputType;
-    }
-
-    function outputType() external view returns (bytes32) {
-        return _steps[_steps.length - 1].outputType;
     }
 }

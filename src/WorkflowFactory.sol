@@ -11,11 +11,16 @@ import {IAgent} from "./interfaces/IAgent.sol";
 contract WorkflowFactory {
     WorkflowRegistry public immutable registry;
     ProtocolTreasury public immutable treasury;
+
     address public immutable userStateINFT;
+    address public immutable userStateLedger; // ✅ NEW
+
     address public protocolAdmin;
 
     mapping(address => address[]) public creatorToWorkflows;
     address[] public allWorkflows;
+
+    // -----------------------------------------------------
 
     error ZeroAddress();
     error EmptyWorkflow();
@@ -25,22 +30,31 @@ contract WorkflowFactory {
     error AgentDoesNotSupportInput(uint256 i, address a, bytes32 t);
     error TypeChainBroken(uint256 i, bytes32 expected, bytes32 got);
 
+    // -----------------------------------------------------
+
     constructor(
         address _registry,
         address _treasury,
         address _userStateINFT,
+        address _userStateLedger, // ✅ NEW
         address _protocolAdmin
     ) {
         if (_registry == address(0)) revert ZeroAddress();
         if (_treasury == address(0)) revert ZeroAddress();
         if (_userStateINFT == address(0)) revert ZeroAddress();
+        if (_userStateLedger == address(0)) revert ZeroAddress();
         if (_protocolAdmin == address(0)) revert ZeroAddress();
 
         registry = WorkflowRegistry(_registry);
         treasury = ProtocolTreasury(payable(_treasury));
+
         userStateINFT = _userStateINFT;
+        userStateLedger = _userStateLedger;
+
         protocolAdmin = _protocolAdmin;
     }
+
+    // -----------------------------------------------------
 
     struct StepInput {
         address agent;
@@ -54,6 +68,8 @@ contract WorkflowFactory {
         string description;
         address admin;
     }
+
+    // -----------------------------------------------------
 
     function createWorkflow(
         CreateWorkflowParams calldata p
@@ -76,6 +92,7 @@ contract WorkflowFactory {
                 admin: p.admin,
                 inft: userStateINFT,
                 treasury: address(treasury),
+                ledger: userStateLedger, // ✅ NEW
                 steps: specs,
                 name: p.name,
                 description: p.description
@@ -106,6 +123,8 @@ contract WorkflowFactory {
         creatorToWorkflows[msg.sender].push(workflowAddr);
         allWorkflows.push(workflowAddr);
     }
+
+    // -----------------------------------------------------
 
     function _validateAndSnapshot(
         StepInput[] calldata steps
@@ -148,10 +167,15 @@ contract WorkflowFactory {
         }
     }
 
+    // -----------------------------------------------------
+
     function quoteWorkflow(
         StepInput[] calldata steps
     ) external view returns (uint256[] memory costs, uint256 total) {
+        if (steps.length == 0) revert EmptyWorkflow();
+
         IWorkflowInstance.StepSpec[] memory specs = _validateAndSnapshot(steps);
+
         costs = new uint256[](specs.length);
 
         for (uint256 i = 0; i < specs.length; i++) {

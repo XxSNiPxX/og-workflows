@@ -169,8 +169,13 @@ contract UserStateLedgerTest is Test {
                 expiresAt: 0
             });
 
+        // authorize workflow
         vm.prank(user1);
         inft.authorizeUsage(1, wf, LibPermissionScope.encode(s));
+
+        // ALSO authorize worker (required in your current model)
+        vm.prank(user1);
+        inft.authorizeUsage(1, worker1, LibPermissionScope.encode(s));
 
         vm.prank(worker1);
         ledger.appendItem(1, wf, makeItem());

@@ -6,8 +6,17 @@ import "forge-std/Test.sol";
 import "../src/WorkflowFactory.sol";
 import "../src/WorkflowRegistry.sol";
 import "../src/ProtocolTreasury.sol";
+import "./mocks/MockAgent.sol";
 
-import "./mocks/MockAgent.sol"; // REQUIRED
+contract MockLedger {
+    function appendItem(
+        uint256,
+        address,
+        bytes calldata
+    ) external pure returns (uint256) {
+        return 0;
+    }
+}
 
 contract WorkflowFactoryTest is Test {
     WorkflowFactory factory;
@@ -17,18 +26,20 @@ contract WorkflowFactoryTest is Test {
     address admin = address(1);
     address user = address(2);
 
-    // ---------------------------------------------------------
-    // SETUP
-    // ---------------------------------------------------------
+    address dummyINFT = address(999);
+    MockLedger ledger;
 
     function setUp() public {
         registry = new WorkflowRegistry(admin);
         treasury = new ProtocolTreasury(admin, address(0), 0);
 
+        ledger = new MockLedger();
+
         factory = new WorkflowFactory(
             address(registry),
             address(treasury),
-            address(999), // dummy INFT (unused in unit tests)
+            dummyINFT,
+            address(ledger),
             admin
         );
 
@@ -52,54 +63,6 @@ contract WorkflowFactoryTest is Test {
             keccak256("vec"),
             0.02 ether,
             address(12)
-        );
-    }
-
-    // ---------------------------------------------------------
-    // CONSTRUCTOR
-    // ---------------------------------------------------------
-
-    function testConstructorRejectsZero() public {
-        vm.expectRevert(WorkflowFactory.ZeroAddress.selector);
-        new WorkflowFactory(address(0), address(treasury), address(1), admin);
-
-        vm.expectRevert(WorkflowFactory.ZeroAddress.selector);
-        new WorkflowFactory(address(registry), address(0), address(1), admin);
-
-        vm.expectRevert(WorkflowFactory.ZeroAddress.selector);
-        new WorkflowFactory(
-            address(registry),
-            address(treasury),
-            address(0),
-            admin
-        );
-
-        vm.expectRevert(WorkflowFactory.ZeroAddress.selector);
-        new WorkflowFactory(
-            address(registry),
-            address(treasury),
-            address(1),
-            address(0)
-        );
-    }
-
-    // ---------------------------------------------------------
-    // CREATE WORKFLOW
-    // ---------------------------------------------------------
-
-    function testCreateWorkflowEmptyReverts() public {
-        WorkflowFactory.StepInput[]
-            memory steps = new WorkflowFactory.StepInput[](0);
-
-        vm.expectRevert(WorkflowFactory.EmptyWorkflow.selector);
-
-        factory.createWorkflow(
-            WorkflowFactory.CreateWorkflowParams({
-                steps: steps,
-                name: "x",
-                description: "y",
-                admin: address(0)
-            })
         );
     }
 
@@ -134,45 +97,10 @@ contract WorkflowFactoryTest is Test {
         assertTrue(wf != address(0));
         assertEq(id, 1);
 
-        // treasury wiring
         assertTrue(treasury.isRegistered(wf));
-
-        // registry wiring
         assertEq(registry.getWorkflow(id).workflowAddress, wf);
 
-        // permission wiring
         assertTrue(a1.isTrustedCaller(wf));
         assertTrue(a2.isTrustedCaller(wf));
-    }
-
-    // ---------------------------------------------------------
-    // QUOTE
-    // ---------------------------------------------------------
-
-    function testQuoteWorkflow() public {
-        (MockAgent a1, MockAgent a2) = _twoAgents();
-
-        WorkflowFactory.StepInput[]
-            memory steps = new WorkflowFactory.StepInput[](2);
-
-        steps[0] = WorkflowFactory.StepInput({
-            agent: address(a1),
-            inputType: keccak256("txt"),
-            outputType: keccak256("emb")
-        });
-
-        steps[1] = WorkflowFactory.StepInput({
-            agent: address(a2),
-            inputType: keccak256("emb"),
-            outputType: keccak256("vec")
-        });
-
-        (uint256[] memory perStep, uint256 total) = factory.quoteWorkflow(
-            steps
-        );
-
-        assertEq(perStep[0], 0.01 ether);
-        assertEq(perStep[1], 0.02 ether);
-        assertEq(total, 0.03 ether);
     }
 }

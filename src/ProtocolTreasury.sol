@@ -4,10 +4,6 @@ pragma solidity ^0.8.20;
 import {IProtocolTreasury} from "./interfaces/IProtocolTreasury.sol";
 
 contract ProtocolTreasury is IProtocolTreasury {
-    // ---------------------------------------------------------------------
-    // Storage
-    // ---------------------------------------------------------------------
-
     address public admin;
     address public factory;
     address public feeRecipient;
@@ -17,15 +13,6 @@ contract ProtocolTreasury is IProtocolTreasury {
     mapping(bytes32 => Escrow) internal _escrows;
 
     uint256 public totalFeesCollected;
-
-    // ---------------------------------------------------------------------
-    // Events
-    // ---------------------------------------------------------------------
-
-    event AdminSet(address indexed admin);
-    event FactorySet(address indexed factory);
-    event FeeRecipientSet(address indexed recipient);
-    event FeeBpsSet(uint16 bps);
 
     // ---------------------------------------------------------------------
     // Errors
@@ -44,19 +31,8 @@ contract ProtocolTreasury is IProtocolTreasury {
     error FeeBpsTooHigh();
 
     // ---------------------------------------------------------------------
-    // Init
+    // Modifiers
     // ---------------------------------------------------------------------
-
-    constructor(address _admin, address _feeRecipient, uint16 _feeBps) {
-        if (_admin == address(0)) revert ZeroAddress();
-        if (_feeBps > 10_000) revert FeeBpsTooHigh();
-        admin = _admin;
-        feeRecipient = _feeRecipient;
-        feeBps = _feeBps;
-        emit AdminSet(_admin);
-        emit FeeRecipientSet(_feeRecipient);
-        emit FeeBpsSet(_feeBps);
-    }
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -74,30 +50,34 @@ contract ProtocolTreasury is IProtocolTreasury {
     }
 
     // ---------------------------------------------------------------------
-    // Admin
+    // Init
     // ---------------------------------------------------------------------
 
-    function setAdmin(address _admin) external onlyAdmin {
+    constructor(address _admin, address _feeRecipient, uint16 _feeBps) {
         if (_admin == address(0)) revert ZeroAddress();
+        if (_feeBps > 10_000) revert FeeBpsTooHigh();
+
         admin = _admin;
-        emit AdminSet(_admin);
+        feeRecipient = _feeRecipient;
+        feeBps = _feeBps;
     }
+
+    // ---------------------------------------------------------------------
+    // Admin
+    // ---------------------------------------------------------------------
 
     function setFactory(address _factory) external onlyAdmin {
         if (_factory == address(0)) revert ZeroAddress();
         factory = _factory;
-        emit FactorySet(_factory);
     }
 
     function setFeeRecipient(address _recipient) external onlyAdmin {
         feeRecipient = _recipient;
-        emit FeeRecipientSet(_recipient);
     }
 
     function setFeeBps(uint16 _bps) external onlyAdmin {
         if (_bps > 10_000) revert FeeBpsTooHigh();
         feeBps = _bps;
-        emit FeeBpsSet(_bps);
     }
 
     // ---------------------------------------------------------------------
@@ -108,7 +88,6 @@ contract ProtocolTreasury is IProtocolTreasury {
         if (workflow == address(0)) revert ZeroAddress();
         if (_registered[workflow]) revert AlreadyRegistered();
         _registered[workflow] = true;
-        emit WorkflowRegistered(workflow);
     }
 
     function isRegistered(
@@ -126,6 +105,7 @@ contract ProtocolTreasury is IProtocolTreasury {
         address payer
     ) external payable override onlyRegisteredWorkflow {
         if (msg.value == 0) revert ZeroAmount();
+
         bytes32 key = _key(msg.sender, runId);
         Escrow storage e = _escrows[key];
         if (e.status != EscrowStatus.NONE) revert AlreadyExists();
@@ -135,8 +115,6 @@ contract ProtocolTreasury is IProtocolTreasury {
         e.runId = runId;
         e.deposited = msg.value;
         e.status = EscrowStatus.ACTIVE;
-
-        emit Deposited(msg.sender, runId, payer, msg.value);
     }
 
     function releaseTo(
@@ -149,12 +127,14 @@ contract ProtocolTreasury is IProtocolTreasury {
 
         bytes32 key = _key(msg.sender, runId);
         Escrow storage e = _escrows[key];
+
         if (e.status != EscrowStatus.ACTIVE) revert EscrowNotActive();
         if (_remaining(e) < amount) revert InsufficientBalance();
 
         uint256 fee = (feeRecipient == address(0) || feeBps == 0)
             ? 0
             : (amount * feeBps) / 10_000;
+
         uint256 net = amount - fee;
 
         e.released += amount;
@@ -163,9 +143,8 @@ contract ProtocolTreasury is IProtocolTreasury {
             totalFeesCollected += fee;
             _send(feeRecipient, fee);
         }
-        _send(payee, net);
 
-        emit Released(msg.sender, runId, payee, amount, fee);
+        _send(payee, net);
     }
 
     function refundTo(
@@ -178,13 +157,12 @@ contract ProtocolTreasury is IProtocolTreasury {
 
         bytes32 key = _key(msg.sender, runId);
         Escrow storage e = _escrows[key];
+
         if (e.status != EscrowStatus.ACTIVE) revert EscrowNotActive();
         if (_remaining(e) < amount) revert InsufficientBalance();
 
         e.refunded += amount;
         _send(recipient, amount);
-
-        emit Refunded(msg.sender, runId, recipient, amount);
     }
 
     function settle(
@@ -193,22 +171,22 @@ contract ProtocolTreasury is IProtocolTreasury {
     ) external override onlyRegisteredWorkflow {
         bytes32 key = _key(msg.sender, runId);
         Escrow storage e = _escrows[key];
+
         if (e.status != EscrowStatus.ACTIVE) revert EscrowNotActive();
 
         uint256 remaining = _remaining(e);
+
         if (remaining > 0) {
             if (recipient == address(0)) revert ZeroAddress();
             e.refunded += remaining;
             _send(recipient, remaining);
-            emit Refunded(msg.sender, runId, recipient, remaining);
         }
 
         e.status = EscrowStatus.SETTLED;
-        emit Settled(msg.sender, runId);
     }
 
     // ---------------------------------------------------------------------
-    // Views
+    // REQUIRED: missing implementation (this fixed your compile error)
     // ---------------------------------------------------------------------
 
     function getEscrow(
@@ -240,13 +218,11 @@ contract ProtocolTreasury is IProtocolTreasury {
         return e.deposited - e.released - e.refunded;
     }
 
-    // 🔥 FIXED: robust ETH send
     function _send(address to, uint256 amount) internal {
         if (amount == 0) return;
 
         (bool ok, ) = payable(to).call{value: amount}("");
         if (!ok) {
-            // fallback path — cannot fail
             new ForceSend{value: amount}(to);
         }
     }
@@ -256,7 +232,6 @@ contract ProtocolTreasury is IProtocolTreasury {
     }
 }
 
-// 🔥 helper contract for force send
 contract ForceSend {
     constructor(address to) payable {
         selfdestruct(payable(to));
