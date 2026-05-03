@@ -25,7 +25,7 @@ import "../src/facets/AgentAdminFacet.sol";
 
 contract DeployFull is Script {
     uint256 constant PRIVATE_KEY =
-        0x2b239a818ed5290df510d1a766c4da0f4becc995403a2bc7d21a7a4058cc074e;
+        s;
 
     function run() external {
         address deployer = vm.addr(PRIVATE_KEY);
