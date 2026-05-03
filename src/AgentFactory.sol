@@ -19,16 +19,18 @@ import {IAgentRegistry} from "./interfaces/IAgentRegistry.sol";
 contract AgentFactory {
     AgentRegistry public immutable registry;
 
-    // Protocol addresses wired into every new agent diamond.
     address public immutable userStateINFT;
     address public immutable userStateLedger;
 
-    // Facet singletons — deployed once, shared across all agents.
+    // 🔴 CRITICAL ADDITION
+    address public immutable workflowFactory;
+
+    // Facet singletons
     address public immutable diamondCutFacet;
     address public immutable diamondLoupeFacet;
     address public immutable ownershipFacet;
     address public immutable agentManifestFacet;
-    address public immutable agentPermissionFacet; // ← was missing before
+    address public immutable agentPermissionFacet;
     address public immutable agentExecutionFacet;
     address public immutable agentAdminFacet;
 
@@ -39,7 +41,7 @@ contract AgentFactory {
         address diamondLoupeFacet;
         address ownershipFacet;
         address agentManifestFacet;
-        address agentPermissionFacet; // ← was missing before
+        address agentPermissionFacet;
         address agentExecutionFacet;
         address agentAdminFacet;
     }
@@ -59,15 +61,18 @@ contract AgentFactory {
         address _registry,
         address _userStateINFT,
         address _userStateLedger,
+        address _workflowFactory, // 🔴 ADD
         FacetSet memory f
     ) {
         require(_registry != address(0), "registry=0");
         require(_userStateINFT != address(0), "inft=0");
         require(_userStateLedger != address(0), "ledger=0");
+        require(_workflowFactory != address(0), "wf=0");
 
         registry = AgentRegistry(_registry);
         userStateINFT = _userStateINFT;
         userStateLedger = _userStateLedger;
+        workflowFactory = _workflowFactory;
 
         diamondCutFacet = f.diamondCutFacet;
         diamondLoupeFacet = f.diamondLoupeFacet;
@@ -83,14 +88,15 @@ contract AgentFactory {
     ) external returns (address diamond, uint256 id) {
         diamond = _deployDiamond();
 
-        // Wire iNFT + ledger so userRequest/complete can read/write state.
-        // (The factory knows these addresses; the diamond doesn't until now.)
+        // STEP 1 — factory becomes admin
+        AgentAdminFacet(diamond).setAdmin(address(this));
+
+        // STEP 2 — initialize
         AgentExecutionFacet(diamond).setExecutionConfig(
             userStateINFT,
             userStateLedger
         );
 
-        // Initialise the manifest (bootstrap-safe — no onlyAdmin guard here).
         AgentManifestFacet(diamond).initManifest(
             p.name,
             p.description,
@@ -107,10 +113,13 @@ contract AgentFactory {
             "INIT_FAILED"
         );
 
-        // Hand ownership to the caller (developer).
+        // 🔴 CRITICAL FIX (bind factory permanently)
+        AgentPermissionFacet(diamond).setWorkflowFactory(workflowFactory);
+
+        // STEP 3 — give control to user
         AgentAdminFacet(diamond).setAdmin(msg.sender);
 
-        // Register in the global registry.
+        // STEP 4 — register
         id = registry.registerAgent(
             IAgentRegistry.RegisterParams({
                 agentAddress: diamond,
@@ -130,29 +139,15 @@ contract AgentFactory {
         emit AgentCreated(id, diamond);
     }
 
-    // -------------------------------------------------------------------------
-    // Internal — diamond deployment
-    // -------------------------------------------------------------------------
+    // --------------------------------------------------
+    // DIAMOND DEPLOYMENT
+    // --------------------------------------------------
 
     function _deployDiamond() internal returns (address diamond) {
-        // Deploy with only DiamondCutFacet attached inline (flat args — no
-        // nested struct[], so no solc 0.8.26 codegen issue in the constructor).
         diamond = address(new AgentDiamond(address(this), diamondCutFacet));
 
-        // Attach every other facet one at a time via single-element FacetCut[].
-        //
-        // ⚠️  WHY NOT ONE BULK diamondCut(_buildCuts(), ...) CALL?
-        //
-        // Passing FacetCut[] (struct[] where each entry has a bytes4[]) as a
-        // cross-contract call argument hits a solc 0.8.26 memory-pointer
-        // codegen bug that emits INVALID at runtime.  The EVM then reverts with
-        // no data; ethers/hardhat surfaces it as "missing revert data" from
-        // estimateGas — even though the Solidity source looks perfectly fine.
-        //
-        // A single-element FacetCut[1] per facet encodes correctly on every
-        // solc version. EIP-2535 makes no requirement that all cuts happen in
-        // one transaction.
         IDiamondCut cut = IDiamondCut(diamond);
+
         _addFacet(cut, diamondLoupeFacet, _loupeSelectors());
         _addFacet(cut, ownershipFacet, _ownershipSelectors());
         _addFacet(cut, agentManifestFacet, _manifestSelectors());
@@ -167,17 +162,19 @@ contract AgentFactory {
         bytes4[] memory sels
     ) internal {
         IDiamond.FacetCut[] memory cuts = new IDiamond.FacetCut[](1);
+
         cuts[0] = IDiamond.FacetCut({
             facetAddress: facet,
             action: IDiamond.FacetCutAction.Add,
             functionSelectors: sels
         });
+
         cut.diamondCut(cuts, address(0), "");
     }
 
-    // -------------------------------------------------------------------------
-    // Selector lists
-    // -------------------------------------------------------------------------
+    // --------------------------------------------------
+    // SELECTORS
+    // --------------------------------------------------
 
     function _loupeSelectors() internal pure returns (bytes4[] memory s) {
         s = new bytes4[](4);
@@ -194,7 +191,8 @@ contract AgentFactory {
     }
 
     function _manifestSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](13);
+        s = new bytes4[](14);
+
         s[0] = bytes4(
             keccak256(
                 "initManifest(string,string,bytes32,bytes32[],bytes32,uint256,address,bool)"
@@ -212,37 +210,29 @@ contract AgentFactory {
         s[10] = bytes4(keccak256("isPaused()"));
         s[11] = bytes4(keccak256("isWorkflowReady()"));
         s[12] = bytes4(keccak256("supportsInput(bytes32)"));
+        s[13] = bytes4(keccak256("payoutAddress()"));
     }
 
     function _permissionSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](9);
-
-        s[0] = AgentPermissionFacet.setWorker.selector;
-        s[1] = AgentPermissionFacet.isWorker.selector;
-        s[2] = AgentPermissionFacet.getWorkers.selector;
-
-        s[3] = AgentPermissionFacet.setTrustedCaller.selector;
-        s[4] = AgentPermissionFacet.isTrustedCaller.selector;
-        s[5] = AgentPermissionFacet.getTrustedCallers.selector;
-
-        s[6] = AgentPermissionFacet.setWorkflowFactory.selector;
-        s[7] = AgentPermissionFacet.getWorkflowFactory.selector; // ✅ add
-        s[8] = AgentPermissionFacet.joinWorkflow.selector; // ✅ add
+        s = new bytes4[](4);
+        s[0] = AgentPermissionFacet.setWorkflowFactory.selector;
+        s[1] = AgentPermissionFacet.getWorkflowFactory.selector;
+        s[2] = AgentPermissionFacet.joinWorkflow.selector;
+        s[3] = AgentPermissionFacet.isTrustedCaller.selector;
     }
 
     function _executionSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](11);
+        s = new bytes4[](7);
+
         s[0] = AgentExecutionFacet.setExecutionConfig.selector;
         s[1] = AgentExecutionFacet.getExecutionConfig.selector;
+
         s[2] = AgentExecutionFacet.request.selector;
-        s[3] = AgentExecutionFacet.userRequest.selector;
-        s[4] = AgentExecutionFacet.acknowledge.selector;
-        s[5] = AgentExecutionFacet.complete.selector;
-        s[6] = AgentExecutionFacet.fail.selector;
-        s[7] = AgentExecutionFacet.cancel.selector;
-        s[8] = AgentExecutionFacet.getRequest.selector;
-        s[9] = AgentExecutionFacet.getRequestKeysForUser.selector;
-        s[10] = AgentExecutionFacet.totalRequests.selector;
+        s[3] = AgentExecutionFacet.complete.selector;
+        s[4] = AgentExecutionFacet.fail.selector;
+        s[5] = AgentExecutionFacet.cancel.selector;
+
+        s[6] = AgentExecutionFacet.getPendingRequests.selector;
     }
 
     function _adminSelectors() internal pure returns (bytes4[] memory s) {

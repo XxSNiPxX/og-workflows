@@ -1,0 +1,15 @@
+forge script script/CreateAgents.s.sol:CreateAgentsInline \
+--rpc-url https://evmrpc-testnet.0g.ai/ \
+--broadcast \
+-vvvv \
+--via-ir \
+--with-gas-price 3000000000 \
+--legacy
+
+ forge script script/SetWorkflowFactory.s.sol   --rpc-urlhttps://evmrpc-testnet.0g.ai/   --broadcast   -vvvv --via-ir --with-gas-price 3000000000 --legacy
+
+ forge script script/CreateWorkflows.s.sol   --rpc-url https://evmrpc-testnet.0g.ai/   --broadcast   -vvvv --via-ir --with-gas-price 3000000000 --legacy
+
+forge script script/DeployFull.s.sol:DeployFull   --rpc-url https://evmrpc-testnet.0g.ai/   --broadcast   --legacy  --via-ir -vvvv
+
+forge script script/StartWorkflow.s.sol:StartWorkflow   --rpc-url https://evmrpc-testnet.0g.ai/   --broadcast   --legacy  --via-ir -vvvv

@@ -2,23 +2,22 @@
 pragma solidity ^0.8.20;
 
 library LibAgentManifestStorage {
-    bytes32 internal constant STORAGE_SLOT = keccak256("agent.standard.manifest.storage");
+    bytes32 internal constant STORAGE_SLOT =
+        keccak256("agent.standard.manifest.storage.v1");
 
     struct AgentManifest {
-        // identity
         string name;
         string description;
-        bytes32 manifestHash;     // off-chain spec / system prompt hash
-        // typing
-        bytes32[] inputTypes;     // accepted input type identifiers
-        bytes32 outputType;       // produced output type identifier
-        // economics
-        uint256 costPerRequest;   // wei (native 0G) per request
-        address payoutAddress;    // where step payments land
-        // ops
-        bool workflowReady;       // opt-in for workflow composition
-        bool paused;              // when true, request() reverts
-        // versioning
+        bytes32 manifestHash;
+        bytes32[] inputTypes;
+        bytes32 outputType;
+        // economics (source of truth)
+        uint256 costPerRequest;
+        address payoutAddress;
+        // execution flags
+        bool workflowReady;
+        bool paused;
+        // timestamps
         uint64 createdAt;
         uint64 updatedAt;
     }

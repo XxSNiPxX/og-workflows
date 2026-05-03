@@ -7,39 +7,14 @@ import {LibAgentManifestStorage} from "../libraries/LibAgentManifestStorage.sol"
 contract AgentManifestFacet {
     using LibAgentManifestStorage for LibAgentManifestStorage.Layout;
 
-    // ---------------------------------------------------------------------
-    // EVENTS
-    // ---------------------------------------------------------------------
-
-    event ManifestInitialized(
-        bytes32[] inputTypes,
-        bytes32 outputType,
-        uint256 costPerRequest,
-        bytes32 manifestHash
-    );
-
-    event ManifestMetaUpdated(
-        string name,
-        string description,
-        bytes32 manifestHash
-    );
-    event PriceUpdated(uint256 oldPrice, uint256 newPrice);
-    event PayoutAddressUpdated(address oldPayout, address newPayout);
-    event WorkflowReadyUpdated(bool ready);
-    event PausedUpdated(bool paused);
-
-    // ---------------------------------------------------------------------
-    // ERRORS
-    // ---------------------------------------------------------------------
+    // ---------------- ERRORS ----------------
 
     error AlreadyInitialized();
     error NotInitialized();
     error EmptyInputTypes();
     error ZeroAddress();
 
-    // ---------------------------------------------------------------------
-    // MODIFIERS
-    // ---------------------------------------------------------------------
+    // ---------------- MODIFIERS ----------------
 
     modifier onlyAdmin() {
         LibDiamond.enforceIsContractOwner();
@@ -47,22 +22,14 @@ contract AgentManifestFacet {
     }
 
     modifier onlyInitialized() {
-        if (LibAgentManifestStorage.layout().manifest.createdAt == 0) {
-            revert NotInitialized();
-        }
+        LibAgentManifestStorage.Layout storage l = LibAgentManifestStorage
+            .layout();
+        if (l.manifest.createdAt == 0) revert NotInitialized();
         _;
     }
 
-    // ---------------------------------------------------------------------
-    // INITIALIZATION (SAFE BOOTSTRAP VERSION)
-    // ---------------------------------------------------------------------
+    // ---------------- INIT ----------------
 
-    /**
-     * @notice One-time initializer
-     * IMPORTANT:
-     * - NO onlyAdmin here (bootstrap-safe)
-     * - relies ONLY on "createdAt == 0"
-     */
     function initManifest(
         string calldata _name,
         string calldata _description,
@@ -98,84 +65,9 @@ contract AgentManifestFacet {
         uint64 ts = uint64(block.timestamp);
         m.createdAt = ts;
         m.updatedAt = ts;
-
-        emit ManifestInitialized(
-            _inputTypes,
-            _outputType,
-            _costPerRequest,
-            _manifestHash
-        );
     }
 
-    // ---------------------------------------------------------------------
-    // ADMIN FUNCTIONS (SAFE AFTER INIT)
-    // ---------------------------------------------------------------------
-
-    function updateMeta(
-        string calldata _name,
-        string calldata _description,
-        bytes32 _manifestHash
-    ) external onlyAdmin onlyInitialized {
-        LibAgentManifestStorage.AgentManifest
-            storage m = LibAgentManifestStorage.layout().manifest;
-
-        m.name = _name;
-        m.description = _description;
-        m.manifestHash = _manifestHash;
-        m.updatedAt = uint64(block.timestamp);
-
-        emit ManifestMetaUpdated(_name, _description, _manifestHash);
-    }
-
-    function setPrice(uint256 _newPrice) external onlyAdmin onlyInitialized {
-        LibAgentManifestStorage.AgentManifest
-            storage m = LibAgentManifestStorage.layout().manifest;
-
-        uint256 old = m.costPerRequest;
-        m.costPerRequest = _newPrice;
-        m.updatedAt = uint64(block.timestamp);
-
-        emit PriceUpdated(old, _newPrice);
-    }
-
-    function setPayoutAddress(
-        address _newPayout
-    ) external onlyAdmin onlyInitialized {
-        if (_newPayout == address(0)) revert ZeroAddress();
-
-        LibAgentManifestStorage.AgentManifest
-            storage m = LibAgentManifestStorage.layout().manifest;
-
-        address old = m.payoutAddress;
-        m.payoutAddress = _newPayout;
-        m.updatedAt = uint64(block.timestamp);
-
-        emit PayoutAddressUpdated(old, _newPayout);
-    }
-
-    function setWorkflowReady(bool _ready) external onlyAdmin onlyInitialized {
-        LibAgentManifestStorage.AgentManifest
-            storage m = LibAgentManifestStorage.layout().manifest;
-
-        m.workflowReady = _ready;
-        m.updatedAt = uint64(block.timestamp);
-
-        emit WorkflowReadyUpdated(_ready);
-    }
-
-    function setPaused(bool _paused) external onlyAdmin onlyInitialized {
-        LibAgentManifestStorage.AgentManifest
-            storage m = LibAgentManifestStorage.layout().manifest;
-
-        m.paused = _paused;
-        m.updatedAt = uint64(block.timestamp);
-
-        emit PausedUpdated(_paused);
-    }
-
-    // ---------------------------------------------------------------------
-    // READS
-    // ---------------------------------------------------------------------
+    // ---------------- READ ----------------
 
     function getManifest()
         external
@@ -197,6 +89,10 @@ contract AgentManifestFacet {
         return LibAgentManifestStorage.layout().manifest.costPerRequest;
     }
 
+    function payoutAddress() external view returns (address) {
+        return LibAgentManifestStorage.layout().manifest.payoutAddress;
+    }
+
     function isPaused() external view returns (bool) {
         return LibAgentManifestStorage.layout().manifest.paused;
     }
@@ -215,5 +111,22 @@ contract AgentManifestFacet {
             if (ins[i] == inputType) return true;
         }
         return false;
+    }
+
+    // ---------------- ADMIN ----------------
+
+    function setPaused(bool _paused) external onlyAdmin onlyInitialized {
+        LibAgentManifestStorage.layout().manifest.paused = _paused;
+    }
+
+    function setWorkflowReady(bool _ready) external onlyAdmin onlyInitialized {
+        LibAgentManifestStorage.layout().manifest.workflowReady = _ready;
+    }
+
+    function setPayoutAddress(
+        address _payout
+    ) external onlyAdmin onlyInitialized {
+        if (_payout == address(0)) revert ZeroAddress();
+        LibAgentManifestStorage.layout().manifest.payoutAddress = _payout;
     }
 }

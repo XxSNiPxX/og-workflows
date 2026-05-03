@@ -12,6 +12,7 @@ import "../src/WorkflowRegistry.sol";
 import "../src/oracles/MockERC7857Oracle.sol";
 import "../src/libraries/LibPermissionScope.sol";
 import "./mocks/MockAgent.sol";
+import "../src/AgentRegistry.sol"; // ✅ ADD
 
 contract CallbackMockAgent is MockAgent {
     constructor(
@@ -59,6 +60,8 @@ contract MegaIntegrationTest is Test {
     ProtocolTreasury treasury;
     WorkflowFactory factory;
 
+    AgentRegistry agentRegistry; // ✅ ADD
+
     function setUp() public {
         oracle = new MockERC7857Oracle(admin);
 
@@ -68,9 +71,12 @@ contract MegaIntegrationTest is Test {
         registry = new WorkflowRegistry(admin);
         treasury = new ProtocolTreasury(admin, feeRecipient, 0);
 
+        agentRegistry = new AgentRegistry(admin); // ✅ ADD
+
         factory = new WorkflowFactory(
             address(registry),
             address(treasury),
+            address(agentRegistry), // ✅ NEW ARG
             address(inft),
             address(ledger),
             admin
@@ -116,6 +122,37 @@ contract MegaIntegrationTest is Test {
         inft.authorizeUsage(tokenId, wfAddr, LibPermissionScope.encode(scope));
     }
 
+    function _registerAgent(
+        address agent,
+        bytes32 inputType,
+        bytes32 outputType,
+        uint256 cost,
+        address payout
+    ) internal {
+        bytes32[] memory inputs = new bytes32[](1);
+        inputs[0] = inputType;
+
+        vm.prank(admin);
+        agentRegistry.setFactory(admin);
+
+        vm.prank(admin);
+        agentRegistry.registerAgent(
+            IAgentRegistry.RegisterParams({
+                agentAddress: agent,
+                creator: admin,
+                admin: admin,
+                payoutAddress: payout,
+                inputTypes: inputs,
+                outputType: outputType,
+                costPerRequest: cost,
+                workflowReady: true,
+                name: "agent",
+                description: "",
+                manifestHash: bytes32(0)
+            })
+        );
+    }
+
     function _buildWorkflow()
         internal
         returns (
@@ -131,13 +168,38 @@ contract MegaIntegrationTest is Test {
             0.01 ether,
             devAlice
         );
+
         a2 = new CallbackMockAgent(
             H("type:emb"),
             H("type:vec"),
             0.02 ether,
             devAlice
         );
+
         a3 = new CallbackMockAgent(
+            H("type:vec"),
+            H("type:report"),
+            0.03 ether,
+            devBob
+        );
+
+        // ✅ CRITICAL FIX: REGISTER AGENTS
+        _registerAgent(
+            address(a1),
+            H("type:txt"),
+            H("type:emb"),
+            0.01 ether,
+            devAlice
+        );
+        _registerAgent(
+            address(a2),
+            H("type:emb"),
+            H("type:vec"),
+            0.02 ether,
+            devAlice
+        );
+        _registerAgent(
+            address(a3),
             H("type:vec"),
             H("type:report"),
             0.03 ether,
@@ -152,11 +214,13 @@ contract MegaIntegrationTest is Test {
             H("type:txt"),
             H("type:emb")
         );
+
         steps[1] = WorkflowFactory.StepInput(
             address(a2),
             H("type:emb"),
             H("type:vec")
         );
+
         steps[2] = WorkflowFactory.StepInput(
             address(a3),
             H("type:vec"),

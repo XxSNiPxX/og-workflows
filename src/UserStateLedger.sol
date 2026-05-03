@@ -26,6 +26,11 @@ contract UserStateLedger is IUserStateLedger {
     mapping(uint256 => StoredItem[]) private _items;
     mapping(uint256 => mapping(bytes32 => uint256[])) private _itemsByType;
     mapping(uint256 => mapping(uint256 => uint256[])) private _itemsByRun;
+    mapping(address => bool) public registeredWorkflows;
+
+    function registerWorkflow(address workflow) external {
+        registeredWorkflows[workflow] = true;
+    }
 
     event ItemAppended(
         uint256 indexed tokenId,

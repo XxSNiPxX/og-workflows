@@ -8,9 +8,10 @@ import "../src/WorkflowRegistry.sol";
 import "../src/ProtocolTreasury.sol";
 import "../src/UserStateINFT.sol";
 import "../src/UserStateLedger.sol";
-import "../src/oracles/MockERC7857Oracle.sol";
 import "../src/WorkflowInstance.sol";
+import "../src/AgentRegistry.sol";
 
+import "../src/oracles/MockERC7857Oracle.sol";
 import "../src/libraries/LibPermissionScope.sol";
 import "./mocks/MockAgent.sol";
 
@@ -20,6 +21,7 @@ contract WorkflowInstanceTest is Test {
     ProtocolTreasury treasury;
     UserStateINFT inft;
     UserStateLedger ledger;
+    AgentRegistry agentRegistry;
     MockERC7857Oracle oracle;
 
     address admin = address(1);
@@ -35,12 +37,14 @@ contract WorkflowInstanceTest is Test {
 
         treasury = new ProtocolTreasury(admin, address(0), 0);
         registry = new WorkflowRegistry(admin);
+        agentRegistry = new AgentRegistry(admin);
 
         factory = new WorkflowFactory(
             address(registry),
             address(treasury),
-            address(inft), // ✅ REAL INFT
-            address(ledger), // ✅ REAL LEDGER
+            address(agentRegistry), // ✅ NEW
+            address(inft),
+            address(ledger),
             admin
         );
 
@@ -63,6 +67,37 @@ contract WorkflowInstanceTest is Test {
         uint256 tokenId;
     }
 
+    function _registerAgent(
+        address agent,
+        bytes32 inputType,
+        bytes32 outputType,
+        uint256 cost,
+        address payout
+    ) internal {
+        bytes32[] memory inputs = new bytes32[](1);
+        inputs[0] = inputType;
+
+        vm.prank(admin);
+        agentRegistry.setFactory(admin);
+
+        vm.prank(admin);
+        agentRegistry.registerAgent(
+            IAgentRegistry.RegisterParams({
+                agentAddress: agent,
+                creator: admin,
+                admin: admin,
+                payoutAddress: payout,
+                inputTypes: inputs,
+                outputType: outputType,
+                costPerRequest: cost,
+                workflowReady: true,
+                name: "agent",
+                description: "",
+                manifestHash: bytes32(0)
+            })
+        );
+    }
+
     function _fullyPrimed() internal returns (Setup memory s) {
         MockAgent a1 = new MockAgent(
             _hash("type:txt"),
@@ -78,20 +113,14 @@ contract WorkflowInstanceTest is Test {
             payoutB
         );
 
-        WorkflowFactory.StepInput[]
-            memory steps = new WorkflowFactory.StepInput[](2);
+        // ✅ REGISTER AGENTS
+        _registerAgent(address(a1), _hash("type:txt"), _hash("type:emb"), 0.01 ether, payoutA);
+        _registerAgent(address(a2), _hash("type:emb"), _hash("type:vec"), 0.02 ether, payoutB);
 
-        steps[0] = WorkflowFactory.StepInput({
-            agent: address(a1),
-            inputType: _hash("type:txt"),
-            outputType: _hash("type:emb")
-        });
+        WorkflowFactory.StepInput[] memory steps = new WorkflowFactory.StepInput[](2);
 
-        steps[1] = WorkflowFactory.StepInput({
-            agent: address(a2),
-            inputType: _hash("type:emb"),
-            outputType: _hash("type:vec")
-        });
+        steps[0] = WorkflowFactory.StepInput(address(a1), _hash("type:txt"), _hash("type:emb"));
+        steps[1] = WorkflowFactory.StepInput(address(a2), _hash("type:emb"), _hash("type:vec"));
 
         vm.prank(user);
         (address wfAddr, ) = factory.createWorkflow(
@@ -114,7 +143,6 @@ contract WorkflowInstanceTest is Test {
         scope.canAppend = true;
         scope.allowedTypes = new bytes32[](0);
         scope.allowedWorkflowIds = new uint256[](0);
-        scope.expiresAt = 0;
 
         vm.prank(user);
         inft.authorizeUsage(tokenId, wfAddr, LibPermissionScope.encode(scope));

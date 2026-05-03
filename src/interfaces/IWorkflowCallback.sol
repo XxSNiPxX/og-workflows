@@ -29,8 +29,5 @@ interface IWorkflowCallback {
     ) external;
 
     /// @notice Called after the agent has stamped the request as CANCELLED.
-    function onStepCancelled(
-        uint256 runId,
-        uint256 stepIndex
-    ) external;
+    function onStepCancelled(uint256 runId, uint256 stepIndex) external;
 }
