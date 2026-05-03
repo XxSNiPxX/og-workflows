@@ -20,22 +20,49 @@ This repository contains the core contract layer for a workflow execution protoc
 
 ---
 
-## Execution Model
+## Architecture Overview
 
-```
-User
-  ↓
-WorkflowInstance
-  ↓
-Agent (via Diamond routing)
-  ↓
-ProtocolTreasury (payment routing)
-  ↓
-UserState (NFT / Ledger updates)
+The protocol is composed of five orthogonal layers that together form a deterministic on-chain state machine. A **User** initiates a workflow through `WorkflowFactory`, which deploys a `WorkflowInstance` — the central state machine that coordinates all execution. An off-chain **Worker** monitors and triggers each step. Execution is routed through the **Agent Diamond**, a modular dispatch contract that delegates to individual agent facets. After each step completes, the `WorkflowInstance` settles payment via `ProtocolTreasury` and records state changes to the `INFT + Ledger` identity layer. Results are surfaced back to the user.
 
-          ↓
-     Off-chain Worker (continues execution)
+```mermaid
+flowchart LR
+  U[User / UI]
+  WF[WorkflowFactory]
+  WI[WorkflowInstance\nState Machine]
+  D[Agent Diamond\nExecution Router]
+  A[Agents]
+  T[ProtocolTreasury\nEscrow + Payout]
+  ID[INFT + Ledger\nIdentity & State]
+  W[Worker\nOff-chain Trigger]
+
+  U --> WF --> WI
+  W --> WI
+  WI --> D --> A
+  A --> WI
+  WI --> T
+  WI --> ID
+  WI --> U
 ```
+
+### Layer Breakdown
+
+| Layer | Contracts | Role |
+|-------|-----------|------|
+| **Execution** | `WorkflowFactory`, `WorkflowInstance` | Entry point and per-workflow state machine |
+| **Routing** | `AgentDiamond` | Dispatches execution via `delegatecall` to agent facets |
+| **Registry** | `AgentRegistry`, `WorkflowRegistry` | Stores registered agents and workflow definitions |
+| **Economics** | `ProtocolTreasury` | Escrow and per-step payment release |
+| **Identity** | `INFT`, `UserStateLedger` | On-chain user identity and state tracking |
+
+### Key Design Decisions
+
+**Factories are the entry point.** `WorkflowFactory` creates `WorkflowInstance` contracts and is wired directly to `ProtocolTreasury`. `AgentFactory` builds Diamond-based agent contracts.
+
+**Payment is gated by execution success.** `ProtocolTreasury` only releases funds after a step completes successfully — no upfront payout.
+
+**The Worker is off-chain.** It monitors workflow state and re-triggers `WorkflowInstance` for each pending step. Without it, workflows stall.
+
+**All data is stored as raw bytes on-chain.** No encryption, no IPFS/0G pointer layer (yet). Each step asserts input/output types before advancing state.
 
 ---
 
@@ -43,12 +70,12 @@ UserState (NFT / Ledger updates)
 
 * Solidity (>=0.8.20)
 * Foundry (Forge, Cast, Anvil)
-* Diamond Standard (modular contract routing)
+* Diamond Standard (EIP-2535, modular contract routing)
 * 0G EVM Testnet
 
 ---
 
-## Project Structure (Conceptual)
+## Project Structure
 
 ```
 contracts/
@@ -86,192 +113,145 @@ forge test
 
 ## ⚠️ Required Pre-Step (Wallet Bootstrap)
 
-Before interacting with contracts, you must generate and fund wallets.
+Before interacting with contracts, generate and fund wallets:
 
 ```bash
 node script/1_bootstrap_wallets.js
 ```
 
-### Requirements
+**Requirements:** A funded private key.
 
-* A funded private key
+**What it does:** Creates multiple wallets, funds them automatically, and prepares accounts for protocol interaction.
 
-### What it does
-
-* Creates multiple wallets
-* Funds them automatically
-* Prepares accounts for protocol interaction
-
-If skipped → transactions will fail due to insufficient funds.
+> If skipped → all transactions will fail due to insufficient funds.
 
 ---
 
 ## Deployment & Execution Flow
 
-**Order is strict. Do not change sequence.**
-
----
+**Order is strict. Do not change the sequence.**
 
 ### 1. Deploy Full System
 
 ```bash
 forge script script/DeployFull.s.sol:DeployFull \
---rpc-url https://evmrpc-testnet.0g.ai/ \
---broadcast \
---legacy \
---via-ir \
--vvvv
+  --rpc-url https://evmrpc-testnet.0g.ai/ \
+  --broadcast --legacy --via-ir -vvvv
 ```
-
----
 
 ### 2. Create Agents
 
 ```bash
 forge script script/CreateAgents.s.sol:CreateAgentsInline \
---rpc-url https://evmrpc-testnet.0g.ai/ \
---broadcast \
--vvvv \
---via-ir \
---with-gas-price 3000000000 \
---legacy
+  --rpc-url https://evmrpc-testnet.0g.ai/ \
+  --broadcast --via-ir --with-gas-price 3000000000 --legacy -vvvv
 ```
-
----
 
 ### 3. Set Workflow Factory
 
 ```bash
 forge script script/SetWorkflowFactory.s.sol \
---rpc-url https://evmrpc-testnet.0g.ai/ \
---broadcast \
--vvvv \
---via-ir \
---with-gas-price 3000000000 \
---legacy
+  --rpc-url https://evmrpc-testnet.0g.ai/ \
+  --broadcast --via-ir --with-gas-price 3000000000 --legacy -vvvv
 ```
-
----
 
 ### 4. Create Workflows
 
 ```bash
 forge script script/CreateWorkflows.s.sol \
---rpc-url https://evmrpc-testnet.0g.ai/ \
---broadcast \
--vvvv \
---via-ir \
---with-gas-price 3000000000 \
---legacy
+  --rpc-url https://evmrpc-testnet.0g.ai/ \
+  --broadcast --via-ir --with-gas-price 3000000000 --legacy -vvvv
 ```
-
----
 
 ### 5. Start Workflow Execution
 
 ```bash
 forge script script/StartWorkflow.s.sol:StartWorkflow \
---rpc-url https://evmrpc-testnet.0g.ai/ \
---broadcast \
---legacy \
---via-ir \
--vvvv
+  --rpc-url https://evmrpc-testnet.0g.ai/ \
+  --broadcast --legacy --via-ir -vvvv
 ```
 
 ---
 
 ## Off-chain Worker (Required)
 
-After starting a workflow:
+After starting a workflow, run the worker:
 
 ```bash
 node script/worker.js
 ```
 
-### Responsibilities
+**Responsibilities:**
+* Monitors workflow state on-chain
+* Detects pending steps and calls the appropriate agent
+* Advances `WorkflowInstance` after each step completes
 
-* Monitors workflow state
-* Executes pending steps
-* Calls agents when required
-* Advances workflow execution
-
-Without the worker → workflows will stall.
+> Without the worker → workflows will stall after the first trigger.
 
 ---
 
 ## Minimal End-to-End Flow
 
 ```
-1. Bootstrap wallets
-2. Deploy contracts
-3. Register agents
-4. Create workflows
-5. Start workflow
-6. Run worker
-7. Observe execution
+1. Bootstrap wallets       →  fund accounts
+2. Deploy contracts        →  establish on-chain system
+3. Register agents         →  populate AgentRegistry
+4. Create workflows        →  define step graphs
+5. Start workflow          →  initialize WorkflowInstance
+6. Run worker              →  drive off-chain execution loop
+7. Observe execution       →  monitor state progression
 ```
-
----
-
-## Key Notes
-
-* Gas price is fixed for testnet stability
-* `--via-ir` used for optimized compilation
-* `--legacy` ensures network compatibility
-* Execution is hybrid (on-chain + off-chain)
 
 ---
 
 ## Common Issues
 
-**Transactions failing**
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Transactions failing | Wallets not funded | Run bootstrap script |
+| Workflow not progressing | Worker not running | Run `worker.js` |
+| Deployment errors | Incorrect script order | Follow exact sequence |
+| RPC issues | Wrong endpoint | Verify RPC URL |
 
-* Cause: wallets not funded
-* Fix: run bootstrap script
+---
 
-**Workflow not progressing**
+## Compiler Flags Reference
 
-* Cause: worker not running
-* Fix: run `worker.js`
-
-**Deployment errors**
-
-* Cause: incorrect script order
-* Fix: follow exact sequence
-
-**RPC issues**
-
-* Cause: wrong endpoint
-* Fix: verify RPC URL
+| Flag | Reason |
+|------|--------|
+| `--via-ir` | Optimized Yul-based compilation for complex contracts |
+| `--legacy` | Required for 0G EVM testnet compatibility |
+| `--with-gas-price 3000000000` | Fixed gas price for testnet stability |
 
 ---
 
 ## What This Enables
 
-* Composable on-chain workflows
-* Pay-per-step agent execution
-* Modular contract architecture
-* Hybrid automation systems
-* Scalable execution pipelines
-
----
-
-## Documentation
-
-[https://book.getfoundry.sh/](https://book.getfoundry.sh/)
+* Composable on-chain workflows with programmable step graphs
+* Pay-per-step agent execution with escrow-backed guarantees
+* Modular contract architecture via the Diamond standard
+* Hybrid automation combining on-chain state and off-chain compute
+* Scalable agent pipelines without centralized coordination
 
 ---
 
 ## Commands Reference
 
 ```bash
-forge build
-forge test
-forge fmt
-forge snapshot
-anvil
-cast <subcommand>
+forge build        # compile contracts
+forge test         # run test suite
+forge fmt          # format Solidity
+forge snapshot     # gas snapshots
+anvil              # local EVM node
+cast <subcommand>  # on-chain interactions
 ```
+
+---
+
+## Documentation
+
+* Foundry Book: [https://book.getfoundry.sh/](https://book.getfoundry.sh/)
+* EIP-2535 Diamond Standard: [https://eips.ethereum.org/EIPS/eip-2535](https://eips.ethereum.org/EIPS/eip-2535)
 
 ---
 
